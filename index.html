@@ -225,7 +225,7 @@ main{flex:1;min-width:0;padding:28px 32px 110px;max-width:1200px}
 <body>
 <div id="root"></div>
 <div id="print"></div>
-<input type="file" id="fileIn" accept=".json,application/json" class="hidden">
+<input type="file" id="fileIn" class="hidden">
 <script>
 "use strict";
 const LOGO=document.querySelector('link[rel=icon]').href;
@@ -1002,11 +1002,25 @@ function vAjustes(){
 function renombrarCat(tipo,i,v){v=v.trim();if(!v)return render();const l=tipo==='ingreso'?S.cfg.catsIngreso:S.cfg.catsGasto;if(l.some((c,j)=>j!==i&&c.n===v)){toast('Ya existe esa categoría',true);return render()}const old=l[i].n;l[i].n=v;S.movs.forEach(m=>{if(m.tipo===tipo&&m.cat===old)m.cat=v});S.fijos.forEach(m=>{if(m.tipo===tipo&&m.cat===old)m.cat=v});save()}
 function quitarCat(tipo,i){const l=tipo==='ingreso'?S.cfg.catsIngreso:S.cfg.catsGasto;if(l.length<=1){toast('Debe quedar al menos una',true);return}const n=l[i].n,u=S.movs.filter(m=>m.tipo===tipo&&m.cat===n).length;
  confirmar('¿Quitar "'+n+'"?',u?`Tiene ${u} movimientos; esos se conservan con su categoría.`:'',()=>{l.splice(i,1);save()})}
+/* Entregar archivos: en celular abre el menú Compartir (Guardar en Archivos, WhatsApp, correo...); en PC descarga normal */
+const esCel=/iP(hone|ad|od)|Android/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+function bajarBlob(blob,nombre){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=nombre;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),60000)}
+function entregarArchivo(nombre,contenido,tipo,msg,alTerminar){
+ const blob=new Blob([contenido],{type:tipo});let file=null;try{file=new File([blob],nombre,{type:tipo})}catch(e){}
+ const puede=file&&esCel&&navigator.share&&navigator.canShare&&navigator.canShare({files:[file]});
+ if(!puede){bajarBlob(blob,nombre);alTerminar&&alTerminar();toast(msg);return}
+ modal(`<h2>📤 Tu archivo está listo<button class="icon-btn" onclick="cerrar()">✕</button></h2>
+  <div class="aviso pri"><span class="ic">📄</span><div class="tx"><b>${esc(nombre)}</b></div></div>
+  <p style="font-size:14px">Toca <b>Guardar</b> y en el menú que sale elige:</p>
+  <ul style="font-size:14px;padding-left:20px;margin:0 0 14px;line-height:1.7"><li><b>“Guardar en Archivos”</b> → <b>iCloud Drive</b> (recomendado), o</li><li><b>WhatsApp</b> / <b>Correo</b> para mandártelo a ti mismo.</li></ul>
+  <div class="acts"><button class="btn sm ghost" id="shBajar">Descargar normal</button><button class="btn pri" id="shBtn">📤 Guardar</button></div>`);
+ $('#shBtn').onclick=async()=>{try{await navigator.share({files:[file]});cerrar();alTerminar&&alTerminar();toast(msg)}catch(e){if(e.name!=='AbortError'){bajarBlob(blob,nombre);cerrar();alTerminar&&alTerminar()}}};
+ $('#shBajar').onclick=()=>{bajarBlob(blob,nombre);cerrar();alTerminar&&alTerminar();toast('Busca el archivo en la app Archivos → Descargas')};
+}
 async function descargarCopia(sync){await saving;
  let fotos={};try{fotos=await fotoTodas()}catch(e){}
  const env=JSON.parse(localStorage.getItem(KEY));env.fotos=fotos;
- const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(env)],{type:'application/json'}));a.download=(sync?'MisFinanzas-datos-':'MisFinanzas-copia-')+hoy()+'.json';document.body.appendChild(a);a.click();a.remove();
- S.cfg.ultimaCopia=new Date().toISOString();save();toast(sync?'Archivo listo 📤 Pásalo al otro equipo':'Copia descargada 💾 Guárdala en un lugar seguro')}
+ entregarArchivo((sync?'MisFinanzas-datos-':'MisFinanzas-copia-')+hoy()+'.json',JSON.stringify(env),'application/json',sync?'Archivo listo 📤 Pásalo al otro equipo':'Copia guardada 💾',()=>{S.cfg.ultimaCopia=new Date().toISOString();save()})}
 function exportCSV(todo){
  const rows=[['Fecha','Tipo','Categoría','Descripción','Cuenta','Valor']];
  const inM=f=>todo||mesDe(f)===mes;const cn=id=>cuentaDe(id).n;
@@ -1017,7 +1031,7 @@ function exportCSV(todo){
  S.transfers.filter(t=>inM(t.fecha)).forEach(t=>rows.push([t.fecha,'Entre cuentas',cn(t.de)+' → '+cn(t.a),t.nota,'',0]));
  const h=rows.shift();rows.sort((a,b)=>String(a[0]).localeCompare(b[0]));rows.unshift(h);
  const csv='﻿'+rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')).join('\r\n');
- const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='MisFinanzas-'+(todo?'todo':mes)+'.csv';document.body.appendChild(a);a.click();a.remove();toast('Archivo descargado')}
+ entregarArchivo('MisFinanzas-'+(todo?'todo':mes)+'.csv',csv,'text/csv','Archivo listo 📊')}
 function formClave(){modal(`<h2>Cambiar contraseña<button class="icon-btn" onclick="cerrar()">✕</button></h2><form onsubmit="event.preventDefault();cambiarClave()">
  <div class="f"><label>Contraseña actual</label><input type="password" id="c0" required></div>
  <div class="f"><label>Nueva contraseña (mínimo 4)</label><input type="password" id="c1" required minlength="4"></div>
