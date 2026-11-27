@@ -257,7 +257,7 @@ function toast(msg,err){const t=document.createElement('div');t.className='toast
 /* ========= datos ========= */
 const KEY='misFinanzas.v1';const ITER=250000;
 const COLS=['movs','ofrendas','deudas','metas','fijos','cuentas','transfers','compras','peticiones'];
-let S=null,cryptoKey=null,salt=null,curIter=ITER;
+let S=null,cryptoKey=null,salt=null,curIter=ITER,cuentaLocal=null,authTok=null;
 const CUENTAS_DEF=[{id:'c_efectivo',n:'Efectivo',i:'💵',ini:0},{id:'c_nequi',n:'Nequi',i:'📲',ini:0},{id:'c_banco',n:'Banco',i:'🏦',ini:0}];
 const nuevoEstado=nombre=>({cfg:{nombre:nombre||'',pct:10,ahorroPct:10,ultimaCopia:null,
  catsGasto:[{n:'Vivienda / arriendo',i:'🏠',lim:0},{n:'Mercado y comida',i:'🛒',lim:0},{n:'Transporte',i:'🚌',lim:0},{n:'Servicios públicos',i:'💡',lim:0},{n:'Celular e internet',i:'📱',lim:0},{n:'Salud',i:'🩺',lim:0},{n:'Educación',i:'🎓',lim:0},{n:'Ropa y cuidado',i:'👕',lim:0},{n:'Familia',i:'👨‍👩‍👧',lim:0},{n:'Salidas y diversión',i:'🎉',lim:0},{n:'Otros gastos',i:'🧾',lim:0}],
@@ -282,7 +282,7 @@ function unb64(s){const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.len
 async function derive(pw,sl,iter){const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt:sl,iterations:iter,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
 async function encStr(str,key){const iv=crypto.getRandomValues(new Uint8Array(12));const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key||cryptoKey,new TextEncoder().encode(str));return{iv:b64(iv),data:b64(ct)}}
 async function decStr(env,key){const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(env.iv)},key||cryptoKey,unb64(env.data));return new TextDecoder().decode(pt)}
-async function encrypt(obj){return{app:'MisFinanzas',v:2,iter:curIter,salt:b64(salt),...await encStr(JSON.stringify(obj))}}
+async function encrypt(obj){const e=await encStr(JSON.stringify(obj));return cuentaLocal?{app:'MisFinanzas',v:3,cuenta:cuentaLocal,...e}:{app:'MisFinanzas',v:2,iter:curIter,salt:b64(salt),...e}}
 const decrypt=async(env,key)=>JSON.parse(await decStr(env,key));
 
 /* ========= fotos (IndexedDB, cifradas) ========= */
@@ -310,7 +310,7 @@ function stamp(){const now=Date.now(),vistos=new Set();
  const ch=hashCfg();if(ch!==cfgHash){S.cfg.u=now;cfgHash=ch}}
 let saving=Promise.resolve();
 function persistir(){if(!S)return;const snap=JSON.parse(JSON.stringify(S));saving=saving.then(async()=>{localStorage.setItem(KEY,JSON.stringify(await encrypt(snap)))}).catch(e=>toast('No se pudo guardar: '+e.message,true))}
-function save(){stamp();persistir();render();if(S&&S.cfg.nube){nubeGen++;localStorage.setItem(NK,'1');nubeProgramar()}}
+function save(){stamp();persistir();render();if(S&&cuentaLocal){nubeGen++;localStorage.setItem(NK,'1');nubeProgramar()}}
 
 /* ========= cálculos ========= */
 const pct=()=>(+S.cfg.pct||0)/100;
@@ -982,17 +982,17 @@ function vAjustes(){
    <div class="muted" style="font-size:13.5px;margin-bottom:12px">Tus datos se guardan cifrados en este navegador. Descarga una copia seguido y guárdala en una USB, correo o Drive. La copia incluye las fotos y está protegida con tu contraseña.<br><b>Última copia:</b> ${c.ultimaCopia?new Date(c.ultimaCopia).toLocaleString('es-CO'):'nunca'}</div>
    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" onclick="descargarCopia()">⬇️ Descargar copia</button><button class="btn" onclick="elegirCopia()">⬆️ Restaurar copia</button><button class="btn" onclick="exportCSV(true)">📊 Exportar todo a Excel</button></div></div>
   ${nubeCard()}
-  <div class="card" id="cel"><h3>📱 Usar en el celular</h3>
+  ${cuentaLocal?'':`<div class="card" id="cel"><h3>📱 Usar en el celular</h3>
    <ol style="margin:0 0 12px;padding-left:20px;font-size:13.5px;line-height:1.6">
     <li>Pásate el archivo <b>Mis Finanzas.html</b> al celular (por WhatsApp a ti mismo, Drive o cable) y ábrelo con <b>Chrome</b>.</li>
     <li>La primera vez, en el celular toca <b>“Restaurar desde una copia”</b> y elige una copia descargada aquí.</li>
     <li>Después, cuando registres cosas en los dos, usa <b>“Enviar datos”</b> en uno y <b>“Recibir y combinar”</b> en el otro. Se juntan sin perder nada.</li></ol>
    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" onclick="descargarCopia(true)">📤 Enviar datos</button><button class="btn" onclick="elegirCombinar()">📥 Recibir y combinar</button></div>
-   <div class="muted mt" style="font-size:12.5px">Lo que borres en un equipo también se borra en el otro al combinar.${c.ultimaSync?' Última combinación: '+new Date(c.ultimaSync).toLocaleString('es-CO'):''}</div></div>
+   <div class="muted mt" style="font-size:12.5px">Lo que borres en un equipo también se borra en el otro al combinar.${c.ultimaSync?' Última combinación: '+new Date(c.ultimaSync).toLocaleString('es-CO'):''}</div></div>`}
   <div class="card"><h3>🔒 Seguridad</h3>
    <div class="muted" style="font-size:13.5px;margin-bottom:12px">La app se bloquea sola después de 15 minutos sin uso.</div>
-   <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="formClave()">🔑 Cambiar contraseña</button><button class="btn" onclick="bloquear()">🔒 Bloquear ahora</button></div>
-   <div class="mt" style="border-top:1px solid var(--line);padding-top:14px"><button class="btn danger sm" onclick="borrarTodo()">Borrar todos los datos</button></div></div>
+   <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="formClave()">🔑 Cambiar contraseña</button><button class="btn" onclick="bloquear()">🔒 Bloquear ahora</button>${cuentaLocal?'<button class="btn" onclick="nuevaRecuperacion()">🗝️ Nueva clave de recuperación</button>':''}</div>
+   <div class="mt" style="border-top:1px solid var(--line);padding-top:14px"><button class="btn danger sm" onclick="borrarTodo()">${cuentaLocal?'Borrar mi usuario y todos sus datos':'Borrar todos los datos'}</button></div></div>
   <div class="card cats-edit"><h3>📊 Categorías de gasto y presupuesto</h3><div class="muted" style="font-size:12.5px;margin-bottom:8px">Pon un límite mensual (opcional) y en Inicio verás si te estás pasando.</div>
    ${c.catsGasto.map((k,i)=>`<div class="row"><input style="width:46px;text-align:center" value="${k.i}" onchange="S.cfg.catsGasto[${i}].i=this.value||'🧾';save()"><input value="${esc(k.n)}" onchange="renombrarCat('gasto',${i},this.value)"><input style="width:130px" inputmode="numeric" placeholder="Sin límite" value="${miles(k.lim)}" oninput="moneyIn(this)" onchange="S.cfg.catsGasto[${i}].lim=num(this.value);save()"><button class="icon-btn" onclick="quitarCat('gasto',${i})">🗑️</button></div>`).join('')}
    <button class="btn sm mt" onclick="S.cfg.catsGasto.push({n:'Nueva categoría '+(S.cfg.catsGasto.length+1),i:'🧾',lim:0});save()">+ Agregar categoría</button></div>
@@ -1039,12 +1039,12 @@ function formClave(){modal(`<h2>Cambiar contraseña<button class="icon-btn" oncl
  <div class="f"><label>Nueva contraseña (mínimo 4)</label><input type="password" id="c1" required minlength="4"></div>
  <div class="f"><label>Repite la nueva</label><input type="password" id="c2" required></div>
  <div class="acts"><button type="button" class="btn" onclick="cerrar()">Cancelar</button><button class="btn pri" id="cBtn">Cambiar</button></div></form>`,()=>$('#c0').focus())}
-async function cambiarClave(){const a=$('#c0').value,b=$('#c1').value;if(b!==$('#c2').value){toast('Las contraseñas nuevas no coinciden',true);return}$('#cBtn').disabled=true;
+async function cambiarClave(){const a=$('#c0').value,b=$('#c1').value;if(b!==$('#c2').value){toast('Las contraseñas nuevas no coinciden',true);return}if(cuentaLocal)return cambiarClaveCuenta(a,b);$('#cBtn').disabled=true;
  try{const env=JSON.parse(localStorage.getItem(KEY));await decrypt(env,await derive(a,unb64(env.salt),env.iter||ITER))}catch(e){toast('La contraseña actual no es correcta',true);$('#cBtn').disabled=false;return}
  const oldKey=cryptoKey;salt=crypto.getRandomValues(new Uint8Array(16));curIter=ITER;const nk=await derive(b,salt,curIter);
  try{const fs=await fotoTodas();for(const[id,env]of Object.entries(fs)){try{await fotoPut(id,await encStr(await decStr(env,oldKey),nk))}catch(e){}}}catch(e){}
  cryptoKey=nk;cerrar();save();toast('Contraseña cambiada 🔑')}
-function borrarTodo(){confirmar('¿Borrar TODOS los datos?','Se pierde todo lo registrado. Descarga una copia antes si la necesitas.',()=>{confirmar('¿Seguro, seguro?','Esta es la última confirmación.',()=>{localStorage.removeItem(KEY);localStorage.removeItem(NK);fotoBorrarTodas();S=null;cryptoKey=null;lockMode='crear';render()})},'Sí, borrar todo')}
+function borrarTodo(){if(cuentaLocal)return borrarUsuario();confirmar('¿Borrar TODOS los datos?','Se pierde todo lo registrado. Descarga una copia antes si la necesitas.',()=>{confirmar('¿Seguro, seguro?','Esta es la última confirmación.',()=>{localStorage.removeItem(KEY);localStorage.removeItem(NK);fotoBorrarTodas();S=null;cryptoKey=null;lockMode='crear';render()})},'Sí, borrar todo')}
 
 /* ---------- combinar (sincronizar) ---------- */
 function combinar(R){R=normalizar(R);const bor=new Map();[...S.borrados,...R.borrados].forEach(b=>{if(!bor.has(b.id)||bor.get(b.id)<b.t)bor.set(b.id,b.t)});
@@ -1058,98 +1058,157 @@ function elegirCombinar(){const fi=$('#fileIn');fi.value='';fi.onchange=async()=
  modal(`<h2>📥 Recibir y combinar<button class="icon-btn" onclick="cerrar()">✕</button></h2><div class="muted" style="margin:-8px 0 14px">Escribe la contraseña del equipo de donde viene el archivo (si es la misma, escríbela igual).</div>
  <form onsubmit="event.preventDefault();hacerCombinar()"><div class="f"><label>Contraseña del archivo</label><input type="password" id="cbPw" required></div><div class="acts"><button type="button" class="btn" onclick="cerrar()">Cancelar</button><button class="btn pri" id="cbBtn">Combinar</button></div></form>`,()=>$('#cbPw').focus())}catch(e){toast('Ese archivo no es de Mis Finanzas',true)}};fi.click()}
 async function hacerCombinar(){const env=envCombinar,btn=$('#cbBtn');btn.disabled=true;btn.textContent='Combinando...';let k,R;
- try{k=await derive($('#cbPw').value,unb64(env.salt),env.iter||ITER);R=await decrypt(env,k)}catch(e){toast('Contraseña incorrecta',true);btn.disabled=false;btn.textContent='Combinar';return}
+ try{k=env.cuenta?(await ingresarLocal($('#cbPw').value,env.cuenta)).dk:await derive($('#cbPw').value,unb64(env.salt),env.iter||ITER);R=await decrypt(env,k)}catch(e){toast('Contraseña incorrecta',true);btn.disabled=false;btn.textContent='Combinar';return}
  const r=combinar(R);
  let nf=0;try{const mias=await fotoTodas();for(const[id,fe]of Object.entries(env.fotos||{})){if(!mias[id]){try{await fotoPut(id,await encStr(await decStr(fe,k)));nf++}catch(e){}}}}catch(e){}
  S.cfg.ultimaSync=new Date().toISOString();initHashes();cerrar();save();toast(`Listo ✅ ${r.nuevos} nuevos, ${r.act} actualizados${nf?', '+nf+' fotos':''}`)}
 
-/* ---------- NUBE (Vercel) ----------
-   Los datos se cifran en este equipo con el código de enlace ANTES de subirse.
-   El servidor solo guarda texto cifrado: ni Vercel ni la base de datos pueden leerlo. */
-const NUBE_PUBLICA='https://mis-finanzas-azure-ten.vercel.app';/* link de Vercel, para cuando la app se abre desde otro lado (GitHub Pages o el archivo) */
+/* ---------- USUARIOS Y NUBE (Vercel) ----------
+   Cada persona crea su usuario. La contraseña nunca sale del equipo: de ella se sacan
+   (1) una "prueba" que se manda al servidor para entrar y (2) una llave que abre la llave de los datos.
+   Los datos se cifran aquí antes de subir: el servidor solo guarda texto cifrado. */
+const NUBE_PUBLICA='https://mis-finanzas-azure-ten.vercel.app';/* para cuando la app se abre desde GitHub Pages */
 const NK='misFinanzas.nubeSucio',NUBE_ABC='23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 let nubeT=null,nubeBusy=false,nubeOtra=false,nubeErr='',nubeGen=0;
 function nubeBase(){if(location.protocol.startsWith('http')&&!location.hostname.endsWith('github.io'))return location.origin;return NUBE_PUBLICA||null}
 const nubeNorm=s=>String(s||'').toUpperCase().replace(/[^0-9A-Z]/g,'');
 const nubeFmt=c=>c.match(/.{1,5}/g).join('-');
-function nubeNuevoCodigo(){const r=crypto.getRandomValues(new Uint8Array(25));return[...r].map(b=>NUBE_ABC[b%32]).join('')}
+const normU=s=>String(s||'').trim().toLowerCase();
+const okU=u=>/^[a-z0-9._-]{3,30}$/.test(u);
+const MSG_U='El usuario debe tener de 3 a 30 letras o números, sin espacios (puedes usar . _ -)';
 const hexDe=buf=>[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
-async function nubeClaves(code){const te=new TextEncoder(),base=await crypto.subtle.importKey('raw',te.encode('MisFinanzasNube|'+nubeNorm(code)),'HKDF',false,['deriveKey','deriveBits']);
- const p=info=>({name:'HKDF',hash:'SHA-256',salt:new Uint8Array(0),info:te.encode(info)});
- const id=hexDe(await crypto.subtle.deriveBits(p('id'),base,256));
- const key=await crypto.subtle.deriveKey(p('key'),base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
- return{id,key}}
-async function nubeApi(method,q,body){let r;
- try{r=await fetch(nubeBase()+'/api/nube'+q,{method,cache:'no-store',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined})}catch(e){throw new Error('No se pudo conectar con la nube')}
+const azar=n=>b64(crypto.getRandomValues(new Uint8Array(n)));
+function codigoAzar(n){return[...crypto.getRandomValues(new Uint8Array(n))].map(b=>NUBE_ABC[b%32]).join('')}
+/* de una contraseña: prueba (se manda) + llave para envolver (no se manda) */
+async function partes(pw,saltB64,iter){const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveBits']);
+ const b=new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',salt:unb64(saltB64),iterations:iter,hash:'SHA-256'},base,512));
+ return{token:hexDe(b.slice(0,32)),wk:await crypto.subtle.importKey('raw',b.slice(32),'AES-GCM',false,['encrypt','decrypt'])}}
+const crudo=async dk=>new Uint8Array(await crypto.subtle.exportKey('raw',dk));
+const envolver=async(dk,wk)=>encStr(b64(await crudo(dk)),wk);
+async function desenvolver(w,wk){return crypto.subtle.importKey('raw',unb64(await decStr(w,wk)),'AES-GCM',true,['encrypt','decrypt'])}
+async function nuevaClave(pw,dk){const salt=azar(16),{token,wk}=await partes(pw,salt,ITER),wrapPw=await envolver(dk,wk);return{srv:{salt,iter:ITER,token,wrapPw},local:{salt,iter:ITER,wrapPw}}}
+async function nuevaRec(dk){const rec=codigoAzar(20),recSalt=azar(16),rp=await partes(rec,recSalt,ITER);return{rec,srv:{recSalt,recIter:ITER,recToken:rp.token,wrapRec:await envolver(dk,rp.wk)}}}
+async function api(a,o={}){const h={};if(o.body)h['Content-Type']='application/json';if(o.auth){h['X-Usuario']=o.auth.u;h['X-Token']=o.auth.token}
+ let r;try{r=await fetch(nubeBase()+'/api/cuenta?a='+a+(o.q||''),{method:o.method||'GET',cache:'no-store',headers:h,body:o.body?JSON.stringify(o.body):undefined})}catch(e){throw new Error('No se pudo conectar. Revisa tu internet.')}
  let j={};try{j=await r.json()}catch(e){}
- if(r.status===409)return{conflict:true};if(!r.ok)throw new Error(j.error||('Error '+r.status));return j}
-function nubeProgramar(ms){clearTimeout(nubeT);if(S&&S.cfg.nube&&nubeBase())nubeT=setTimeout(()=>nubeSync(),ms==null?3000:ms)}
+ if(r.status===409&&a==='datos')return{conflict:true};
+ if(!r.ok){const e=new Error(j.error||('Error '+r.status));e.status=r.status;throw e}return j}
+/* resultado de entrar: {dk, token, local:{u,salt,iter,wrapPw}, rec?} */
+async function registrar(u,pw){const dk=await crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+ const n=await nuevaClave(pw,dk),r=await nuevaRec(dk);
+ await api('registro',{method:'POST',body:{u,...n.srv,...r.srv}});
+ return{dk,token:n.srv.token,local:{u,...n.local},rec:r.rec}}
+async function ingresarOnline(u,pw){const s=await api('sal',{q:'&u='+encodeURIComponent(u)}),{token,wk}=await partes(pw,s.salt,s.iter);
+ const c=await api('cuenta',{auth:{u,token}});
+ return{dk:await desenvolver(c.wrapPw,wk),token,local:{u,salt:s.salt,iter:s.iter,wrapPw:c.wrapPw}}}
+async function ingresarLocal(pw,L){const{token,wk}=await partes(pw,L.salt,L.iter);return{dk:await desenvolver(L.wrapPw,wk),token,local:{...L}}}
+async function recuperar(u,rec,pw){rec=nubeNorm(rec);if(rec.length!==20)throw new Error('La clave de recuperación tiene 20 letras y números');
+ const s=await api('salrec',{q:'&u='+encodeURIComponent(u)}),rp=await partes(rec,s.salt,s.iter);
+ const r1=await api('rec',{method:'POST',body:{u,recToken:rp.token}});
+ let dk;try{dk=await desenvolver(r1.wrapRec,rp.wk)}catch(e){throw new Error('Clave de recuperación incorrecta')}
+ const n=await nuevaClave(pw,dk);await api('rec',{method:'POST',body:{u,recToken:rp.token,nuevo:n.srv}});
+ return{dk,token:n.srv.token,local:{u,...n.local}}}
+const sesion=()=>({u:cuentaLocal.u,token:authTok});
+/* abre la app con la sesión ya validada */
+async function iniciarSesion(r,o={}){
+ const env=o.env||envLocal();let d=null;
+ if(env&&env.cuenta&&env.cuenta.u===r.local.u)d=await decrypt(env,r.dk);
+ cryptoKey=r.dk;cuentaLocal=r.local;authTok=r.token;salt=new Uint8Array(16);curIter=ITER;
+ S=d?normalizar(d):nuevoEstado(o.nombre);if(S.cfg.nube&&S.cfg.nube.code)delete S.cfg.nube.code;
+ if(!d)S.cfg.u=o.nuevo?Date.now():-1;/* equipo nuevo: los ajustes de la nube mandan */
+ initHashes();
+ if(o.nuevo){save()}
+ else{persistir();if(!d){const b=$('#lBtn');if(b)b.textContent='Bajando tus datos...';await nubeSync()}}
+ lockMode=null;restoreEnv=null;view='inicio';mes=mesDe(hoy());render();resetIdle();
+ if(r.rec)mostrarRecuperacion(r.rec);else setTimeout(()=>S&&mostrarAvisos(),300);
+ nubeProgramar(800)}
+/* equipo con datos viejos (sin usuario) → pasan a un usuario */
+async function migrarCuenta(r){await saving;const old=cryptoKey;
+ try{const fs=await fotoTodas();for(const[id,e]of Object.entries(fs)){try{await fotoPut(id,await encStr(await decStr(e,old),r.dk))}catch(x){}}}catch(x){}
+ cryptoKey=r.dk;cuentaLocal=r.local;authTok=r.token;delete S.cfg.nube;
+ nubeGen++;localStorage.setItem(NK,'1');persistir();render();
+ if(r.rec)mostrarRecuperacion(r.rec);
+ await nubeSync(true)}
+function formCuenta(nuevo){modal(`<h2>${nuevo?'👤 Crear tu usuario':'🔗 Entrar a tu usuario'}<button class="icon-btn" onclick="cerrar()">✕</button></h2>
+ <div class="muted" style="margin:-8px 0 14px">${nuevo?'Lo que tienes en este equipo pasa a tu usuario. Después entras desde cualquier celular o computador con el mismo usuario y contraseña.':'Lo que tienes en este equipo se junta con lo de tu usuario, sin perder nada.'}</div>
+ <form onsubmit="event.preventDefault();hacerCuenta(${nuevo})"><div class="f"><label>Usuario</label><input id="mUser" required autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="30"></div>
+ <div class="f"><label>Contraseña${nuevo?' (mínimo 8)':''}</label><input type="password" id="mPw" required autocomplete="${nuevo?'new-password':'current-password'}"></div>
+ ${nuevo?'<div class="f"><label>Repite la contraseña</label><input type="password" id="mPw2" required autocomplete="new-password"></div>':''}
+ <div class="acts"><button type="button" class="btn" onclick="cerrar()">Cancelar</button><button class="btn pri" id="mBtn">${nuevo?'Crear usuario':'Entrar'}</button></div></form>`,()=>$('#mUser').focus())}
+async function hacerCuenta(nuevo){const u=normU($('#mUser').value),pw=$('#mPw').value,btn=$('#mBtn');
+ if(!okU(u))return toast(MSG_U,true);
+ if(nuevo){if(pw.length<8)return toast('La contraseña debe tener mínimo 8 caracteres',true);if(pw!==$('#mPw2').value)return toast('Las contraseñas no coinciden',true)}
+ btn.disabled=true;btn.textContent='Un momento...';
+ try{const r=nuevo?await registrar(u,pw):await ingresarOnline(u,pw);cerrar();await migrarCuenta(r)}
+ catch(e){toast(e.message,true);btn.disabled=false;btn.textContent=nuevo?'Crear usuario':'Entrar'}}
+function mostrarRecuperacion(rec){modal(`<h2>🗝️ Tu clave de recuperación</h2>
+ <p style="font-size:14px;margin-top:0">Si algún día olvidas tu contraseña, con esta clave recuperas tu usuario. <b>Es la única forma</b>: nadie más puede recuperarlo. Anótala en papel o guárdala en un lugar seguro.</p>
+ <div style="font:700 20px/1.5 ui-monospace,Consolas,monospace;letter-spacing:1px;text-align:center;padding:14px;border:1px dashed var(--line);border-radius:12px;background:var(--soft);user-select:all">${nubeFmt(rec)}</div>
+ <p class="muted" style="font-size:12.5px">⚠️ Solo se muestra esta vez. No se la muestres a nadie.</p>
+ <div class="acts"><button class="btn" id="recCp">📋 Copiar</button><button class="btn pri" onclick="cerrar()">Ya la guardé</button></div>`);
+ $('#recCp').onclick=async()=>{try{await navigator.clipboard.writeText(nubeFmt(rec));toast('Copiada 📋')}catch(e){toast('No se pudo copiar; anótala a mano',true)}}}
+function nuevaRecuperacion(){confirmar('¿Crear una clave de recuperación nueva?','La clave anterior deja de servir.',async()=>{
+ try{const r=await nuevaRec(cryptoKey);await api('nuevarec',{method:'POST',auth:sesion(),body:r.srv});mostrarRecuperacion(r.rec)}catch(e){toast(e.message,true)}},'Crear nueva')}
+async function cambiarClaveCuenta(a,b){if(b.length<8){toast('La contraseña nueva debe tener mínimo 8 caracteres',true);return}
+ const btn=$('#cBtn');btn.disabled=true;
+ try{await ingresarLocal(a,cuentaLocal)}catch(e){toast('La contraseña actual no es correcta',true);btn.disabled=false;return}
+ try{const n=await nuevaClave(b,cryptoKey);await api('clave',{method:'POST',auth:sesion(),body:n.srv});
+  cuentaLocal={u:cuentaLocal.u,...n.local};authTok=n.srv.token;persistir();cerrar();toast('Contraseña cambiada 🔑 Úsala en todos tus equipos')}
+ catch(e){toast(e.message,true);btn.disabled=false}}
+async function cerrarSesion(){if(localStorage.getItem(NK)&&navigator.onLine)await nubeSync();
+ const pend=localStorage.getItem(NK);
+ confirmar('¿Cerrar sesión en este equipo?',(pend?'⚠️ Hay cambios que todavía no se han subido a la nube y se perderían. ':'')+'Tus datos quedan guardados en tu usuario: para volver a verlos entra con tu usuario y contraseña.',async()=>{
+  await saving;localStorage.removeItem(KEY);localStorage.removeItem(NK);await fotoBorrarTodas();S=null;cryptoKey=null;cuentaLocal=null;authTok=null;lockMode='ingresar';render()},'Cerrar sesión')}
+function borrarUsuario(){confirmar('¿Borrar tu usuario y TODOS sus datos?','Se borra de la nube y de este equipo. No se puede deshacer. Descarga una copia antes si la necesitas.',()=>{confirmar('¿Seguro, seguro?','Esta es la última confirmación.',async()=>{
+ try{await api('borrar',{method:'POST',auth:sesion()})}catch(e){toast(e.message,true);return}
+ localStorage.removeItem(KEY);localStorage.removeItem(NK);await fotoBorrarTodas();S=null;cryptoKey=null;cuentaLocal=null;authTok=null;lockMode='registro';render();toast('Usuario borrado')},'Sí, borrar todo')})}
+function nubeProgramar(ms){clearTimeout(nubeT);if(S&&cuentaLocal&&authTok&&nubeBase())nubeT=setTimeout(()=>nubeSync(),ms==null?3000:ms)}
 function refrescar(){const a=document.activeElement;if($('#mbg')||(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))return setTimeout(refrescar,2000);if(S)render()}
 async function nubeSync(manual){
- if(!S||!S.cfg.nube||!nubeBase())return;
+ if(!S||!cuentaLocal||!authTok||!nubeBase())return;
  if(nubeBusy){nubeOtra=true;return}
  if(!navigator.onLine){nubePintar();if(manual)toast('Sin internet. Se sincroniza sola cuando vuelva la conexión.',true);return}
  nubeBusy=true;nubeErr='';nubePintar();let traidos=0;
- try{await saving;const code=S.cfg.nube.code,{id,key}=await nubeClaves(code);
-  const sigue=()=>S&&S.cfg.nube&&S.cfg.nube.code===code;
+ try{await saving;const auth=sesion(),key=cryptoKey;
+  const sigue=()=>S&&cuentaLocal&&authTok===auth.token;
   for(let i=0;;i++){
    if(i>4)throw new Error('Hubo muchos cambios al tiempo, intenta otra vez');
-   const g=await nubeApi('GET','?k='+id);if(!sigue())return;
+   const g=await api('datos',{auth});if(!sigue())return;
    if(g.data){let R;try{R=JSON.parse(await decStr(g.data,key))}catch(e){throw new Error('No se pudieron leer los datos de la nube')}
     if(!sigue())return;const r=combinar(R);if(r.nuevos+r.act){traidos+=r.nuevos+r.act;initHashes();persistir()}}
    const enNube=new Set(g.fotos||[]),mias=await fotoTodas(),usadas=new Set(S.movs.map(x=>x.foto).filter(Boolean));
-   for(const fid of usadas)if(!mias[fid]&&enNube.has(fid)){try{const fr=await nubeApi('GET','?k='+id+'&f='+encodeURIComponent(fid));if(fr.data&&sigue()){await fotoPut(fid,await encStr(await decStr(fr.data,key)));traidos++}}catch(e){}}
+   for(const fid of usadas)if(!mias[fid]&&enNube.has(fid)){try{const fr=await api('foto',{auth,q:'&f='+encodeURIComponent(fid)});if(fr.data&&sigue()){await fotoPut(fid,fr.data);traidos++}}catch(e){}}
    if(g.data&&!localStorage.getItem(NK))break;
-   for(const fid of usadas)if(mias[fid]&&!enNube.has(fid)){try{await nubeApi('PUT','?k='+id+'&f='+encodeURIComponent(fid),{data:await encStr(await decStr(mias[fid]),key)})}catch(e){}}
+   for(const fid of usadas)if(mias[fid]&&!enNube.has(fid)){try{await api('foto',{method:'PUT',auth,q:'&f='+encodeURIComponent(fid),body:{data:mias[fid]}})}catch(e){}}
    if(!sigue())return;
    const gen=nubeGen,snap=JSON.parse(JSON.stringify(S));delete snap.cfg.nube;
-   const p=await nubeApi('PUT','?k='+id,{ver:g.ver||0,data:await encStr(JSON.stringify(snap),key)});
+   const p=await api('datos',{method:'PUT',auth,body:{ver:g.ver||0,data:await encStr(JSON.stringify(snap),key)}});
    if(p.conflict)continue;
    if(gen===nubeGen)localStorage.removeItem(NK);
    break}
   if(!sigue())return;
-  S.cfg.nube.ult=new Date().toISOString();persistir();
+  S.cfg.nube={ult:new Date().toISOString()};persistir();
   if(traidos)refrescar();
   if(manual)toast(traidos?`Sincronizado ✅ ${traidos} cambios traídos`:'Sincronizado ✅');
- }catch(e){nubeErr=e.message||'Error';if(manual)toast('Nube: '+nubeErr,true)}
+ }catch(e){nubeErr=e.status===401?'Tu contraseña cambió en otro equipo. Bloquea la app y entra con la nueva.':(e.message||'Error');if(manual)toast(nubeErr,true)}
  finally{nubeBusy=false;nubePintar();if(nubeOtra){nubeOtra=false;nubeProgramar(500)}}}
-function nubeTexto(){const n=S&&S.cfg.nube;if(!n)return'';
+function nubeTexto(){if(!S||!cuentaLocal)return'';
  if(nubeBusy)return'🔄 Sincronizando...';
  if(!navigator.onLine)return'📴 Sin internet. Tus cambios se suben solos cuando vuelva la conexión.';
  if(nubeErr)return'⚠️ '+esc(nubeErr);
- return n.ult?'✅ Sincronizado: '+new Date(n.ult).toLocaleString('es-CO'):'⏳ Pendiente de la primera sincronización'}
+ const u=S.cfg.nube&&S.cfg.nube.ult;return u?'✅ Sincronizado: '+new Date(u).toLocaleString('es-CO'):'⏳ Pendiente de sincronizar'}
 function nubePintar(){const e=$('#nubeEst');if(e)e.innerHTML=nubeTexto()}
-function nubeCard(){const n=S.cfg.nube,b=nubeBase();let body;
- if(!b)body=`<div class="muted" style="font-size:13.5px">Para usar la nube abre la app desde su link de internet.</div>`;
- else if(!n)body=`<div class="muted" style="font-size:13.5px;margin-bottom:12px">Tus datos se mantienen iguales en todos tus equipos, solos, sin pasar archivos. Se suben <b>cifrados</b>: ni el servidor puede leerlos.</div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" onclick="nubeActivar()">☁️ Activar nube</button><button class="btn" onclick="nubeFormEnlazar()">🔗 Ya tengo un código</button></div>`;
- else body=`<div id="nubeEst" style="font-size:13.5px;margin-bottom:12px">${nubeTexto()}</div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" onclick="nubeSync(true)">🔄 Sincronizar ahora</button><button class="btn" onclick="nubeMostrarCodigo()">🔑 Ver código de enlace</button><button class="btn sm ghost" onclick="nubeDesconectar()">Desconectar este equipo</button></div>
-  <div class="muted mt" style="font-size:12.5px">Se sincroniza sola al abrir la app y cada vez que guardas algo.</div>`;
- return`<div class="card"><h3>☁️ Nube</h3>${body}</div>`}
-async function nubeActivar(){const code=nubeNuevoCodigo();
- try{const{id}=await nubeClaves(code);const g=await nubeApi('GET','?k='+id);if(g.data)throw new Error('Intenta otra vez')}catch(e){toast('Nube: '+e.message,true);return}
- S.cfg.nube={code};save();nubeMostrarCodigo(true);nubeSync()}
-function nubeMostrarCodigo(nuevo){modal(`<h2>${nuevo?'☁️ Nube activada':'🔑 Código de enlace'}<button class="icon-btn" onclick="cerrar()">✕</button></h2>
- <p style="font-size:14px;margin-top:0">Para conectar otro celular o computador: abre allá la app, ve a <b>Ajustes → Nube</b>, toca <b>“Ya tengo un código”</b> y escribe:</p>
- <div style="font:700 19px/1.5 ui-monospace,Consolas,monospace;letter-spacing:1px;text-align:center;padding:14px;border:1px dashed var(--line);border-radius:12px;background:var(--soft);word-break:break-all;user-select:all">${nubeFmt(S.cfg.nube.code)}</div>
- <p class="muted" style="font-size:12.5px">⚠️ Este código es la llave de tus datos en la nube: no se lo muestres a nadie. Siempre lo puedes volver a ver aquí en cualquier equipo conectado.</p>
- <div class="acts"><button class="btn" onclick="nubeCopiar()">📋 Copiar</button><button class="btn pri" onclick="cerrar()">Listo</button></div>`)}
-async function nubeCopiar(){try{await navigator.clipboard.writeText(nubeFmt(S.cfg.nube.code));toast('Código copiado 📋')}catch(e){toast('No se pudo copiar; escríbelo a mano',true)}}
-function nubeFormEnlazar(){modal(`<h2>🔗 Conectar a la nube<button class="icon-btn" onclick="cerrar()">✕</button></h2><div class="muted" style="margin:-8px 0 14px">Escribe el código que aparece en <b>Ajustes → Nube → Ver código</b> del otro equipo. Lo que ya tengas aquí se junta con lo de la nube, sin perder nada.</div>
- <form onsubmit="event.preventDefault();nubeEnlazar()"><div class="f"><label>Código de enlace</label><input id="nbCod" required autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" style="font-family:ui-monospace,Consolas,monospace;text-transform:uppercase"></div>
- <div class="acts"><button type="button" class="btn" onclick="cerrar()">Cancelar</button><button class="btn pri" id="nbBtn">Conectar</button></div></form>`,()=>$('#nbCod').focus())}
-async function nubeEnlazar(){const code=nubeNorm($('#nbCod').value),btn=$('#nbBtn');
- if(code.length!==25){toast('El código tiene 25 letras y números',true);return}
- btn.disabled=true;btn.textContent='Buscando...';
- try{const{id,key}=await nubeClaves(code);const g=await nubeApi('GET','?k='+id);if(!g.data)throw new Error('No hay datos con ese código. Revísalo.');
-  try{await decStr(g.data,key)}catch(e){throw new Error('Ese código no corresponde')}}
- catch(e){toast(e.message,true);btn.disabled=false;btn.textContent='Conectar';return}
- S.cfg.nube={code};cerrar();save();await nubeSync(true)}
-function nubeDesconectar(){confirmar('¿Desconectar este equipo de la nube?','Tus datos se quedan aquí y en la nube; solo deja de sincronizar. Puedes volver a conectar con el código.',()=>{delete S.cfg.nube;localStorage.removeItem(NK);save();toast('Equipo desconectado')},'Desconectar')}
+function nubeCard(){const b=nubeBase();let body;
+ if(cuentaLocal)body=`<div style="font-size:14px;margin-bottom:6px">Entraste como <b>${esc(cuentaLocal.u)}</b></div><div id="nubeEst" style="font-size:13.5px;margin-bottom:12px">${nubeTexto()}</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" onclick="nubeSync(true)">🔄 Sincronizar ahora</button><button class="btn" onclick="cerrarSesion()">🚪 Cerrar sesión en este equipo</button></div>
+  <div class="muted mt" style="font-size:12.5px">En otro celular o computador abre la app y entra con tu mismo usuario y contraseña. Se sincroniza sola al abrir y cada vez que guardas algo.</div>`;
+ else if(!b)body=`<div class="muted" style="font-size:13.5px">Para tener usuario y nube, abre la app desde su link de internet.</div>`;
+ else body=`<div class="muted" style="font-size:13.5px;margin-bottom:12px">Crea tu usuario para entrar desde cualquier celular o computador con los mismos datos. Se guardan <b>cifrados</b>: ni el servidor puede leerlos.</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" onclick="formCuenta(true)">👤 Crear usuario con mis datos</button><button class="btn" onclick="formCuenta(false)">🔗 Ya tengo usuario</button></div>`;
+ return`<div class="card"><h3>👤 Usuario y nube</h3>${body}</div>`}
 addEventListener('online',()=>nubeProgramar(500));
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')nubeProgramar(500);else if(localStorage.getItem(NK))nubeSync()});
-setInterval(()=>{if(S&&S.cfg.nube&&document.visibilityState==='visible')nubeSync()},120000);
+setInterval(()=>{if(S&&cuentaLocal&&document.visibilityState==='visible')nubeSync()},180000);
 
 /* ---------- modal / confirm ---------- */
 function modal(html,onMount){cerrar();const bg=document.createElement('div');bg.className='modal-bg';bg.id='mbg';bg.innerHTML=`<div class="modal">${html}</div>`;bg.addEventListener('mousedown',e=>{if(e.target===bg)cerrar()});document.body.appendChild(bg);onMount&&onMount()}
@@ -1159,39 +1218,77 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')cerrar()});
 
 /* ---------- BLOQUEO ---------- */
 let lockMode=null,restoreEnv=null;
+function envLocal(){try{return JSON.parse(localStorage.getItem(KEY))}catch(e){return null}}
 function renderLock(){
- if(!lockMode)lockMode=localStorage.getItem(KEY)?'entrar':'crear';
- const m=lockMode;
+ const env=envLocal();
+ if(!lockMode)lockMode=env?(env.cuenta?'entrarU':'entrar'):(nubeBase()?'registro':'crear');
+ const m=lockMode,uL=env&&env.cuenta?env.cuenta.u:'';
+ const T={crear:['Bienvenido a Mis Finanzas','Crea una contraseña para proteger tus datos.','Crear y empezar'],
+  entrar:['Mis Finanzas','Escribe tu contraseña para entrar.','Entrar'],
+  restaurar:['Restaurar copia','Escribe la contraseña con la que se hizo esa copia.','Restaurar'],
+  registro:['Bienvenido a Mis Finanzas','Crea tu usuario. Con él entras desde cualquier celular o computador y tus datos se mantienen iguales.','Crear usuario'],
+  ingresar:['Entrar a tu usuario','Escribe tu usuario y contraseña.','Entrar'],
+  entrarU:['Mis Finanzas','Hola, <b>'+esc(uL)+'</b>. Escribe tu contraseña para entrar.','Entrar'],
+  recuperar:['Recuperar acceso','Escribe tu usuario, la clave de recuperación que guardaste al crear el usuario y una contraseña nueva.','Cambiar contraseña y entrar']}[m];
+ const inp=(id,lbl,type,extra)=>`<div class="f"><label>${lbl}</label><input id="${id}" type="${type||'text'}" required ${extra||''}></div>`;
+ const usr=inp('lUser','Usuario','text','autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="30"');
+ const pwNuevo=lbl=>inp('lPw',lbl,'password','autocomplete="new-password" minlength="8"')+inp('lPw2','Repite la contraseña','password','autocomplete="new-password"')+`<div class="muted" style="font-size:12.5px;margin-bottom:12px">Mínimo 8 caracteres. ⚠️ Anótala en un lugar seguro.</div>`;
+ const pw=inp('lPw','Contraseña','password','autocomplete="current-password"');
+ const campos={crear:`<div class="f"><label>¿Cómo te llamas?</label><input id="lNombre" maxlength="40" placeholder="Tu nombre"></div><div class="f"><label>Contraseña</label><input type="password" id="lPw" required autocomplete="new-password" minlength="4"></div><div class="f"><label>Repite la contraseña</label><input type="password" id="lPw2" required></div><div class="muted" style="font-size:12.5px;margin-bottom:12px">⚠️ Si olvidas la contraseña no hay forma de recuperar los datos. Anótala en un lugar seguro.</div>`,
+  entrar:pw,restaurar:pw,entrarU:pw,ingresar:usr+pw,
+  registro:`<div class="f"><label>¿Cómo te llamas?</label><input id="lNombre" maxlength="40" placeholder="Tu nombre"></div>`+usr+pwNuevo('Contraseña'),
+  recuperar:usr+inp('lRec','Clave de recuperación','text','autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX" style="font-family:ui-monospace,Consolas,monospace;text-transform:uppercase"')+pwNuevo('Contraseña nueva')}[m];
+ const L=(fn,t)=>`<button class="link" onclick="${fn}">${t}</button>`,ir=x=>`lockMode='${x}';render()`;
+ const links={crear:[L('elegirCopia()','Restaurar desde una copia')],entrar:[L('elegirCopia()','Restaurar desde una copia')],
+  restaurar:[L("lockMode=null;restoreEnv=null;render()",'Cancelar')],
+  registro:[L(ir('ingresar'),'¿Ya tienes usuario? <b>Entrar</b>'),L('elegirCopia()','Restaurar desde una copia')],
+  ingresar:[L(ir('recuperar'),'Olvidé mi contraseña'),L(ir('registro'),'Crear un usuario nuevo')],
+  recuperar:[L(env&&env.cuenta?ir('entrarU'):ir('ingresar'),'Volver')],
+  entrarU:[L(ir('recuperar'),'Olvidé mi contraseña'),L('otroUsuario()','Entrar con otro usuario')]}[m];
  $('#root').innerHTML=`<div class="lock"><div class="box"><div class="logo"><img src="${LOGO}" alt=""></div>
- <h1>${m==='crear'?'Bienvenido a Mis Finanzas':m==='restaurar'?'Restaurar copia':'Mis Finanzas'}</h1>
- <p>${m==='crear'?'Crea una contraseña para proteger tus datos.':m==='restaurar'?'Escribe la contraseña con la que se hizo esa copia.':'Escribe tu contraseña para entrar.'}</p>
- <form onsubmit="event.preventDefault();entrar()">
-  ${m==='crear'?`<div class="f"><label>¿Cómo te llamas?</label><input id="lNombre" maxlength="40" placeholder="Tu nombre"></div>`:''}
-  <div class="f"><label>Contraseña</label><input type="password" id="lPw" required autocomplete="${m==='crear'?'new-password':'current-password'}" ${m==='crear'?'minlength="4"':''}></div>
-  ${m==='crear'?`<div class="f"><label>Repite la contraseña</label><input type="password" id="lPw2" required></div><div class="muted" style="font-size:12.5px;margin-bottom:12px">⚠️ Si olvidas la contraseña no hay forma de recuperar los datos. Anótala en un lugar seguro.</div>`:''}
-  <div class="err" id="lErr"></div>
-  <button class="btn pri" id="lBtn">${m==='crear'?'Crear y empezar':m==='restaurar'?'Restaurar':'Entrar'}</button>
- </form>
- <div style="text-align:center;margin-top:16px;font-size:13.5px">${m==='restaurar'?`<button class="link" onclick="lockMode=null;restoreEnv=null;render()">Cancelar</button>`:`<button class="link" onclick="elegirCopia()">Restaurar desde una copia</button>`}</div>
+ <h1>${T[0]}</h1><p>${T[1]}</p>
+ <form onsubmit="event.preventDefault();entrar()">${campos}<div class="err" id="lErr"></div><button class="btn pri" id="lBtn">${T[2]}</button></form>
+ <div style="text-align:center;margin-top:16px;font-size:13.5px;display:flex;flex-direction:column;gap:10px;align-items:center">${links.join('')}</div>
  </div></div>`;
- setTimeout(()=>{const e=$('#lNombre')||$('#lPw');e&&e.focus()},50);
+ setTimeout(()=>{const e=$('#lNombre')||$('#lUser')||$('#lPw');e&&e.focus()},50);
 }
+function otroUsuario(){const pend=localStorage.getItem(NK);
+ confirmar('¿Entrar con otro usuario?',(pend?'⚠️ Hay cambios de este equipo que todavía no se han subido a la nube y se perderían. Entra primero con tu contraseña para que se suban. ':'')+'Los datos de este usuario se quitan de este equipo, pero quedan guardados en la nube.',async()=>{
+  localStorage.removeItem(KEY);localStorage.removeItem(NK);await fotoBorrarTodas();lockMode='ingresar';render()},'Sí, cambiar')}
 async function entrar(){
- const pw=$('#lPw').value,err=$('#lErr'),btn=$('#lBtn');err.textContent='';
- if(lockMode==='crear'){if(pw.length<4){err.textContent='Mínimo 4 caracteres';return}if(pw!==$('#lPw2').value){err.textContent='Las contraseñas no coinciden';return}
-  btn.disabled=true;btn.textContent='Preparando...';salt=crypto.getRandomValues(new Uint8Array(16));curIter=ITER;cryptoKey=await derive(pw,salt,curIter);S=nuevoEstado($('#lNombre').value.trim());initHashes();lockMode=null;view='inicio';save();resetIdle();return}
- const env=lockMode==='restaurar'?restoreEnv:JSON.parse(localStorage.getItem(KEY));
+ const err=$('#lErr'),btn=$('#lBtn'),txt=btn.textContent,v=id=>($('#'+id)||{}).value||'';err.textContent='';
+ const fallo=msg=>{err.textContent=msg;btn.disabled=false;btn.textContent=txt};
+ const m=lockMode,pw=v('lPw');
+ if(m==='registro'||m==='ingresar'||m==='recuperar'){
+  const u=normU(v('lUser'));if(!okU(u))return fallo(MSG_U);
+  if(m!=='ingresar'){if(pw.length<8)return fallo('La contraseña debe tener mínimo 8 caracteres');if(pw!==v('lPw2'))return fallo('Las contraseñas no coinciden')}
+  btn.disabled=true;btn.textContent=m==='registro'?'Creando tu usuario...':'Entrando...';
+  try{const r=m==='registro'?await registrar(u,pw):m==='ingresar'?await ingresarOnline(u,pw):await recuperar(u,v('lRec'),pw);
+   const env=envLocal();if(env&&env.cuenta&&env.cuenta.u!==u){localStorage.removeItem(KEY);localStorage.removeItem(NK);await fotoBorrarTodas()}
+   await iniciarSesion(r,{nombre:v('lNombre').trim(),nuevo:m==='registro'})}
+  catch(e){fallo(e.message)}
+  return}
+ const env=m==='restaurar'?restoreEnv:envLocal();
+ if(m==='crear'){if(pw.length<4)return fallo('Mínimo 4 caracteres');if(pw!==v('lPw2'))return fallo('Las contraseñas no coinciden');
+  btn.disabled=true;btn.textContent='Preparando...';salt=crypto.getRandomValues(new Uint8Array(16));curIter=ITER;cryptoKey=await derive(pw,salt,curIter);S=nuevoEstado(v('lNombre').trim());initHashes();lockMode=null;view='inicio';save();resetIdle();return}
  btn.disabled=true;btn.textContent='Abriendo...';
+ if(env.cuenta){/* datos de un usuario: se abre sin internet; si la contraseña cambió en otro equipo, se revisa en la nube */
+  let r;try{r=await ingresarLocal(pw,env.cuenta)}catch(e){
+   if(m==='restaurar'||!navigator.onLine)return fallo('Contraseña incorrecta');
+   try{r=await ingresarOnline(env.cuenta.u,pw)}catch(e2){return fallo(e2.status===401?'Contraseña incorrecta':e2.message)}}
+  try{if(m==='restaurar'){const{fotos,...rest}=env;localStorage.setItem(KEY,JSON.stringify(rest));await fotoBorrarTodas();for(const[id,fe]of Object.entries(fotos||{})){try{await fotoPut(id,fe)}catch(e){}}localStorage.setItem(NK,'1');toast('Copia restaurada ✅');await iniciarSesion(r,{env:rest})}
+   else await iniciarSesion(r,{env})}catch(e){fallo('No se pudieron abrir los datos: '+e.message)}
+  return}
  try{const sl=unb64(env.salt),it=env.iter||ITER,k=await derive(pw,sl,it);const d=await decrypt(env,k);
-  cryptoKey=k;salt=sl;curIter=it;S=normalizar(d);initHashes();
-  if(lockMode==='restaurar'){const{fotos,...rest}=env;localStorage.setItem(KEY,JSON.stringify(rest));await fotoBorrarTodas();for(const[id,fe]of Object.entries(fotos||{})){try{await fotoPut(id,fe)}catch(e){}}toast('Copia restaurada ✅')}
-  lockMode=null;restoreEnv=null;view='inicio';mes=mesDe(hoy());render();resetIdle();setTimeout(mostrarAvisos,300);nubeProgramar(800);
- }catch(e){err.textContent='Contraseña incorrecta';btn.disabled=false;btn.textContent=lockMode==='restaurar'?'Restaurar':'Entrar';$('#lPw').select()}
+  cryptoKey=k;salt=sl;curIter=it;cuentaLocal=null;authTok=null;S=normalizar(d);initHashes();
+  if(m==='restaurar'){const{fotos,...rest}=env;localStorage.setItem(KEY,JSON.stringify(rest));await fotoBorrarTodas();for(const[id,fe]of Object.entries(fotos||{})){try{await fotoPut(id,fe)}catch(e){}}toast('Copia restaurada ✅')}
+  lockMode=null;restoreEnv=null;view='inicio';mes=mesDe(hoy());render();resetIdle();setTimeout(()=>S&&mostrarAvisos(),300);
+ }catch(e){fallo('Contraseña incorrecta');$('#lPw').select()}
 }
 function elegirCopia(){const fi=$('#fileIn');fi.value='';fi.onchange=async()=>{const f=fi.files[0];if(!f)return;try{const env=JSON.parse(await f.text());if(env.app!=='MisFinanzas'||!env.data)throw 0;
  if(localStorage.getItem(KEY)&&!confirm('Esto reemplazará los datos que tienes ahora en este equipo por los de la copia. ¿Continuar?'))return;
- await saving;restoreEnv=env;lockMode='restaurar';S=null;cryptoKey=null;cerrar();render()}catch(e){toast('Ese archivo no es una copia de Mis Finanzas',true)}};fi.click()}
-function bloquear(){saving.then(()=>{S=null;cryptoKey=null;lockMode=null;cerrar();render()})}
+ await saving;restoreEnv=env;lockMode='restaurar';S=null;cryptoKey=null;cuentaLocal=null;authTok=null;cerrar();render()}catch(e){toast('Ese archivo no es una copia de Mis Finanzas',true)}};fi.click()}
+function bloquear(){saving.then(()=>{S=null;cryptoKey=null;cuentaLocal=null;authTok=null;lockMode=null;cerrar();render()})}
 let idleT;function resetIdle(){clearTimeout(idleT);if(S)idleT=setTimeout(bloquear,15*60*1000)}
 ['mousemove','keydown','click','touchstart','scroll'].forEach(ev=>document.addEventListener(ev,resetIdle,{passive:true}));
 
