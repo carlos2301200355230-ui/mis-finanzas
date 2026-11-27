@@ -302,14 +302,15 @@ function comprimir(file){return new Promise((res,rej)=>{const img=new Image();im
 /* ========= guardado + marcas para sincronizar ========= */
 let hashes={},cfgHash='';
 const hashOf=x=>{const{u,...r}=x;return JSON.stringify(r)};
-const hashCfg=()=>{const{u,ultimaCopia,...r}=S.cfg;return JSON.stringify(r)};
+const hashCfg=()=>{const{u,ultimaCopia,nube,...r}=S.cfg;return JSON.stringify(r)};
 function initHashes(){hashes={};COLS.forEach(k=>S[k].forEach(x=>hashes[x.id]=hashOf(x)));cfgHash=hashCfg()}
 function stamp(){const now=Date.now(),vistos=new Set();
  COLS.forEach(k=>S[k].forEach(x=>{vistos.add(x.id);const h=hashOf(x);if(hashes[x.id]!==h){x.u=now;hashes[x.id]=h}}));
  Object.keys(hashes).forEach(id=>{if(!vistos.has(id)){S.borrados.push({id,t:now});delete hashes[id]}});
  const ch=hashCfg();if(ch!==cfgHash){S.cfg.u=now;cfgHash=ch}}
 let saving=Promise.resolve();
-function save(){stamp();const snap=JSON.parse(JSON.stringify(S));saving=saving.then(async()=>{localStorage.setItem(KEY,JSON.stringify(await encrypt(snap)))}).catch(e=>toast('No se pudo guardar: '+e.message,true));render()}
+function persistir(){if(!S)return;const snap=JSON.parse(JSON.stringify(S));saving=saving.then(async()=>{localStorage.setItem(KEY,JSON.stringify(await encrypt(snap)))}).catch(e=>toast('No se pudo guardar: '+e.message,true))}
+function save(){stamp();persistir();render();if(S&&S.cfg.nube){nubeGen++;localStorage.setItem(NK,'1');nubeProgramar()}}
 
 /* ========= cálculos ========= */
 const pct=()=>(+S.cfg.pct||0)/100;
@@ -980,6 +981,7 @@ function vAjustes(){
   <div class="card"><h3>💾 Copia de seguridad</h3>
    <div class="muted" style="font-size:13.5px;margin-bottom:12px">Tus datos se guardan cifrados en este navegador. Descarga una copia seguido y guárdala en una USB, correo o Drive. La copia incluye las fotos y está protegida con tu contraseña.<br><b>Última copia:</b> ${c.ultimaCopia?new Date(c.ultimaCopia).toLocaleString('es-CO'):'nunca'}</div>
    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" onclick="descargarCopia()">⬇️ Descargar copia</button><button class="btn" onclick="elegirCopia()">⬆️ Restaurar copia</button><button class="btn" onclick="exportCSV(true)">📊 Exportar todo a Excel</button></div></div>
+  ${nubeCard()}
   <div class="card" id="cel"><h3>📱 Usar en el celular</h3>
    <ol style="margin:0 0 12px;padding-left:20px;font-size:13.5px;line-height:1.6">
     <li>Pásate el archivo <b>Mis Finanzas.html</b> al celular (por WhatsApp a ti mismo, Drive o cable) y ábrelo con <b>Chrome</b>.</li>
@@ -1042,14 +1044,14 @@ async function cambiarClave(){const a=$('#c0').value,b=$('#c1').value;if(b!==$('
  const oldKey=cryptoKey;salt=crypto.getRandomValues(new Uint8Array(16));curIter=ITER;const nk=await derive(b,salt,curIter);
  try{const fs=await fotoTodas();for(const[id,env]of Object.entries(fs)){try{await fotoPut(id,await encStr(await decStr(env,oldKey),nk))}catch(e){}}}catch(e){}
  cryptoKey=nk;cerrar();save();toast('Contraseña cambiada 🔑')}
-function borrarTodo(){confirmar('¿Borrar TODOS los datos?','Se pierde todo lo registrado. Descarga una copia antes si la necesitas.',()=>{confirmar('¿Seguro, seguro?','Esta es la última confirmación.',()=>{localStorage.removeItem(KEY);fotoBorrarTodas();S=null;cryptoKey=null;lockMode='crear';render()})},'Sí, borrar todo')}
+function borrarTodo(){confirmar('¿Borrar TODOS los datos?','Se pierde todo lo registrado. Descarga una copia antes si la necesitas.',()=>{confirmar('¿Seguro, seguro?','Esta es la última confirmación.',()=>{localStorage.removeItem(KEY);localStorage.removeItem(NK);fotoBorrarTodas();S=null;cryptoKey=null;lockMode='crear';render()})},'Sí, borrar todo')}
 
 /* ---------- combinar (sincronizar) ---------- */
 function combinar(R){R=normalizar(R);const bor=new Map();[...S.borrados,...R.borrados].forEach(b=>{if(!bor.has(b.id)||bor.get(b.id)<b.t)bor.set(b.id,b.t)});
  let nuevos=0,act=0;
  COLS.forEach(k=>{const map=new Map(S[k].map(x=>[x.id,x]));R[k].forEach(x=>{const y=map.get(x.id);if(!y){if(!(bor.has(x.id)&&bor.get(x.id)>=(x.u||0))){map.set(x.id,x);nuevos++}}else if((x.u||0)>(y.u||0)){map.set(x.id,x);act++}});S[k]=[...map.values()].filter(x=>!(bor.has(x.id)&&bor.get(x.id)>=(x.u||0)))});
  S.borrados=[...bor].map(([id,t])=>({id,t}));
- if((R.cfg.u||0)>(S.cfg.u||0)){const uc=S.cfg.ultimaCopia;S.cfg=R.cfg;S.cfg.ultimaCopia=uc}
+ if((R.cfg.u||0)>(S.cfg.u||0)){const uc=S.cfg.ultimaCopia,nb=S.cfg.nube;S.cfg=R.cfg;S.cfg.ultimaCopia=uc;if(nb)S.cfg.nube=nb;else delete S.cfg.nube}
  return{nuevos,act}}
 let envCombinar=null;
 function elegirCombinar(){const fi=$('#fileIn');fi.value='';fi.onchange=async()=>{const f=fi.files[0];if(!f)return;try{const env=JSON.parse(await f.text());if(env.app!=='MisFinanzas'||!env.data)throw 0;envCombinar=env;
@@ -1060,6 +1062,94 @@ async function hacerCombinar(){const env=envCombinar,btn=$('#cbBtn');btn.disable
  const r=combinar(R);
  let nf=0;try{const mias=await fotoTodas();for(const[id,fe]of Object.entries(env.fotos||{})){if(!mias[id]){try{await fotoPut(id,await encStr(await decStr(fe,k)));nf++}catch(e){}}}}catch(e){}
  S.cfg.ultimaSync=new Date().toISOString();initHashes();cerrar();save();toast(`Listo ✅ ${r.nuevos} nuevos, ${r.act} actualizados${nf?', '+nf+' fotos':''}`)}
+
+/* ---------- NUBE (Vercel) ----------
+   Los datos se cifran en este equipo con el código de enlace ANTES de subirse.
+   El servidor solo guarda texto cifrado: ni Vercel ni la base de datos pueden leerlo. */
+const NUBE_PUBLICA='';/* link de Vercel, para cuando la app se abre desde otro lado (GitHub Pages o el archivo) */
+const NK='misFinanzas.nubeSucio',NUBE_ABC='23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+let nubeT=null,nubeBusy=false,nubeOtra=false,nubeErr='',nubeGen=0;
+function nubeBase(){if(location.protocol.startsWith('http')&&!location.hostname.endsWith('github.io'))return location.origin;return NUBE_PUBLICA||null}
+const nubeNorm=s=>String(s||'').toUpperCase().replace(/[^0-9A-Z]/g,'');
+const nubeFmt=c=>c.match(/.{1,5}/g).join('-');
+function nubeNuevoCodigo(){const r=crypto.getRandomValues(new Uint8Array(25));return[...r].map(b=>NUBE_ABC[b%32]).join('')}
+const hexDe=buf=>[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+async function nubeClaves(code){const te=new TextEncoder(),base=await crypto.subtle.importKey('raw',te.encode('MisFinanzasNube|'+nubeNorm(code)),'HKDF',false,['deriveKey','deriveBits']);
+ const p=info=>({name:'HKDF',hash:'SHA-256',salt:new Uint8Array(0),info:te.encode(info)});
+ const id=hexDe(await crypto.subtle.deriveBits(p('id'),base,256));
+ const key=await crypto.subtle.deriveKey(p('key'),base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+ return{id,key}}
+async function nubeApi(method,q,body){let r;
+ try{r=await fetch(nubeBase()+'/api/nube'+q,{method,cache:'no-store',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined})}catch(e){throw new Error('No se pudo conectar con la nube')}
+ let j={};try{j=await r.json()}catch(e){}
+ if(r.status===409)return{conflict:true};if(!r.ok)throw new Error(j.error||('Error '+r.status));return j}
+function nubeProgramar(ms){clearTimeout(nubeT);if(S&&S.cfg.nube&&nubeBase())nubeT=setTimeout(()=>nubeSync(),ms==null?3000:ms)}
+function refrescar(){const a=document.activeElement;if($('#mbg')||(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))return setTimeout(refrescar,2000);if(S)render()}
+async function nubeSync(manual){
+ if(!S||!S.cfg.nube||!nubeBase())return;
+ if(nubeBusy){nubeOtra=true;return}
+ if(!navigator.onLine){nubePintar();if(manual)toast('Sin internet. Se sincroniza sola cuando vuelva la conexión.',true);return}
+ nubeBusy=true;nubeErr='';nubePintar();let traidos=0;
+ try{await saving;const code=S.cfg.nube.code,{id,key}=await nubeClaves(code);
+  const sigue=()=>S&&S.cfg.nube&&S.cfg.nube.code===code;
+  for(let i=0;;i++){
+   if(i>4)throw new Error('Hubo muchos cambios al tiempo, intenta otra vez');
+   const g=await nubeApi('GET','?k='+id);if(!sigue())return;
+   if(g.data){let R;try{R=JSON.parse(await decStr(g.data,key))}catch(e){throw new Error('No se pudieron leer los datos de la nube')}
+    if(!sigue())return;const r=combinar(R);if(r.nuevos+r.act){traidos+=r.nuevos+r.act;initHashes();persistir()}}
+   const enNube=new Set(g.fotos||[]),mias=await fotoTodas(),usadas=new Set(S.movs.map(x=>x.foto).filter(Boolean));
+   for(const fid of usadas)if(!mias[fid]&&enNube.has(fid)){try{const fr=await nubeApi('GET','?k='+id+'&f='+encodeURIComponent(fid));if(fr.data&&sigue()){await fotoPut(fid,await encStr(await decStr(fr.data,key)));traidos++}}catch(e){}}
+   if(g.data&&!localStorage.getItem(NK))break;
+   for(const fid of usadas)if(mias[fid]&&!enNube.has(fid)){try{await nubeApi('PUT','?k='+id+'&f='+encodeURIComponent(fid),{data:await encStr(await decStr(mias[fid]),key)})}catch(e){}}
+   if(!sigue())return;
+   const gen=nubeGen,snap=JSON.parse(JSON.stringify(S));delete snap.cfg.nube;
+   const p=await nubeApi('PUT','?k='+id,{ver:g.ver||0,data:await encStr(JSON.stringify(snap),key)});
+   if(p.conflict)continue;
+   if(gen===nubeGen)localStorage.removeItem(NK);
+   break}
+  if(!sigue())return;
+  S.cfg.nube.ult=new Date().toISOString();persistir();
+  if(traidos)refrescar();
+  if(manual)toast(traidos?`Sincronizado ✅ ${traidos} cambios traídos`:'Sincronizado ✅');
+ }catch(e){nubeErr=e.message||'Error';if(manual)toast('Nube: '+nubeErr,true)}
+ finally{nubeBusy=false;nubePintar();if(nubeOtra){nubeOtra=false;nubeProgramar(500)}}}
+function nubeTexto(){const n=S&&S.cfg.nube;if(!n)return'';
+ if(nubeBusy)return'🔄 Sincronizando...';
+ if(!navigator.onLine)return'📴 Sin internet. Tus cambios se suben solos cuando vuelva la conexión.';
+ if(nubeErr)return'⚠️ '+esc(nubeErr);
+ return n.ult?'✅ Sincronizado: '+new Date(n.ult).toLocaleString('es-CO'):'⏳ Pendiente de la primera sincronización'}
+function nubePintar(){const e=$('#nubeEst');if(e)e.innerHTML=nubeTexto()}
+function nubeCard(){const n=S.cfg.nube,b=nubeBase();let body;
+ if(!b)body=`<div class="muted" style="font-size:13.5px">Para usar la nube abre la app desde su link de internet.</div>`;
+ else if(!n)body=`<div class="muted" style="font-size:13.5px;margin-bottom:12px">Tus datos se mantienen iguales en todos tus equipos, solos, sin pasar archivos. Se suben <b>cifrados</b>: ni el servidor puede leerlos.</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" onclick="nubeActivar()">☁️ Activar nube</button><button class="btn" onclick="nubeFormEnlazar()">🔗 Ya tengo un código</button></div>`;
+ else body=`<div id="nubeEst" style="font-size:13.5px;margin-bottom:12px">${nubeTexto()}</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" onclick="nubeSync(true)">🔄 Sincronizar ahora</button><button class="btn" onclick="nubeMostrarCodigo()">🔑 Ver código de enlace</button><button class="btn sm ghost" onclick="nubeDesconectar()">Desconectar este equipo</button></div>
+  <div class="muted mt" style="font-size:12.5px">Se sincroniza sola al abrir la app y cada vez que guardas algo.</div>`;
+ return`<div class="card"><h3>☁️ Nube</h3>${body}</div>`}
+async function nubeActivar(){const code=nubeNuevoCodigo();
+ try{const{id}=await nubeClaves(code);const g=await nubeApi('GET','?k='+id);if(g.data)throw new Error('Intenta otra vez')}catch(e){toast('Nube: '+e.message,true);return}
+ S.cfg.nube={code};save();nubeMostrarCodigo(true);nubeSync()}
+function nubeMostrarCodigo(nuevo){modal(`<h2>${nuevo?'☁️ Nube activada':'🔑 Código de enlace'}<button class="icon-btn" onclick="cerrar()">✕</button></h2>
+ <p style="font-size:14px;margin-top:0">Para conectar otro celular o computador: abre allá la app, ve a <b>Ajustes → Nube</b>, toca <b>“Ya tengo un código”</b> y escribe:</p>
+ <div style="font:700 19px/1.5 ui-monospace,Consolas,monospace;letter-spacing:1px;text-align:center;padding:14px;border:1px dashed var(--line);border-radius:12px;background:var(--soft);word-break:break-all;user-select:all">${nubeFmt(S.cfg.nube.code)}</div>
+ <p class="muted" style="font-size:12.5px">⚠️ Este código es la llave de tus datos en la nube: no se lo muestres a nadie. Siempre lo puedes volver a ver aquí en cualquier equipo conectado.</p>
+ <div class="acts"><button class="btn" onclick="nubeCopiar()">📋 Copiar</button><button class="btn pri" onclick="cerrar()">Listo</button></div>`)}
+async function nubeCopiar(){try{await navigator.clipboard.writeText(nubeFmt(S.cfg.nube.code));toast('Código copiado 📋')}catch(e){toast('No se pudo copiar; escríbelo a mano',true)}}
+function nubeFormEnlazar(){modal(`<h2>🔗 Conectar a la nube<button class="icon-btn" onclick="cerrar()">✕</button></h2><div class="muted" style="margin:-8px 0 14px">Escribe el código que aparece en <b>Ajustes → Nube → Ver código</b> del otro equipo. Lo que ya tengas aquí se junta con lo de la nube, sin perder nada.</div>
+ <form onsubmit="event.preventDefault();nubeEnlazar()"><div class="f"><label>Código de enlace</label><input id="nbCod" required autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" style="font-family:ui-monospace,Consolas,monospace;text-transform:uppercase"></div>
+ <div class="acts"><button type="button" class="btn" onclick="cerrar()">Cancelar</button><button class="btn pri" id="nbBtn">Conectar</button></div></form>`,()=>$('#nbCod').focus())}
+async function nubeEnlazar(){const code=nubeNorm($('#nbCod').value),btn=$('#nbBtn');
+ if(code.length!==25){toast('El código tiene 25 letras y números',true);return}
+ btn.disabled=true;btn.textContent='Buscando...';
+ try{const{id,key}=await nubeClaves(code);const g=await nubeApi('GET','?k='+id);if(!g.data)throw new Error('No hay datos con ese código. Revísalo.');
+  try{await decStr(g.data,key)}catch(e){throw new Error('Ese código no corresponde')}}
+ catch(e){toast(e.message,true);btn.disabled=false;btn.textContent='Conectar';return}
+ S.cfg.nube={code};cerrar();save();await nubeSync(true)}
+function nubeDesconectar(){confirmar('¿Desconectar este equipo de la nube?','Tus datos se quedan aquí y en la nube; solo deja de sincronizar. Puedes volver a conectar con el código.',()=>{delete S.cfg.nube;localStorage.removeItem(NK);save();toast('Equipo desconectado')},'Desconectar')}
+addEventListener('online',()=>nubeProgramar(500));
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')nubeProgramar(500);else if(localStorage.getItem(NK))nubeSync()});
+setInterval(()=>{if(S&&S.cfg.nube&&document.visibilityState==='visible')nubeSync()},120000);
 
 /* ---------- modal / confirm ---------- */
 function modal(html,onMount){cerrar();const bg=document.createElement('div');bg.className='modal-bg';bg.id='mbg';bg.innerHTML=`<div class="modal">${html}</div>`;bg.addEventListener('mousedown',e=>{if(e.target===bg)cerrar()});document.body.appendChild(bg);onMount&&onMount()}
@@ -1095,7 +1185,7 @@ async function entrar(){
  try{const sl=unb64(env.salt),it=env.iter||ITER,k=await derive(pw,sl,it);const d=await decrypt(env,k);
   cryptoKey=k;salt=sl;curIter=it;S=normalizar(d);initHashes();
   if(lockMode==='restaurar'){const{fotos,...rest}=env;localStorage.setItem(KEY,JSON.stringify(rest));await fotoBorrarTodas();for(const[id,fe]of Object.entries(fotos||{})){try{await fotoPut(id,fe)}catch(e){}}toast('Copia restaurada ✅')}
-  lockMode=null;restoreEnv=null;view='inicio';mes=mesDe(hoy());render();resetIdle();setTimeout(mostrarAvisos,300);
+  lockMode=null;restoreEnv=null;view='inicio';mes=mesDe(hoy());render();resetIdle();setTimeout(mostrarAvisos,300);nubeProgramar(800);
  }catch(e){err.textContent='Contraseña incorrecta';btn.disabled=false;btn.textContent=lockMode==='restaurar'?'Restaurar':'Entrar';$('#lPw').select()}
 }
 function elegirCopia(){const fi=$('#fileIn');fi.value='';fi.onchange=async()=>{const f=fi.files[0];if(!f)return;try{const env=JSON.parse(await f.text());if(env.app!=='MisFinanzas'||!env.data)throw 0;
