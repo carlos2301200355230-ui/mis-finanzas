@@ -1066,7 +1066,7 @@ async function hacerCombinar(){const env=envCombinar,btn=$('#cbBtn');btn.disable
 /* ---------- NUBE (Vercel) ----------
    Los datos se cifran en este equipo con el código de enlace ANTES de subirse.
    El servidor solo guarda texto cifrado: ni Vercel ni la base de datos pueden leerlo. */
-const NUBE_PUBLICA='';/* link de Vercel, para cuando la app se abre desde otro lado (GitHub Pages o el archivo) */
+const NUBE_PUBLICA='https://mis-finanzas-azure-ten.vercel.app';/* link de Vercel, para cuando la app se abre desde otro lado (GitHub Pages o el archivo) */
 const NK='misFinanzas.nubeSucio',NUBE_ABC='23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 let nubeT=null,nubeBusy=false,nubeOtra=false,nubeErr='',nubeGen=0;
 function nubeBase(){if(location.protocol.startsWith('http')&&!location.hostname.endsWith('github.io'))return location.origin;return NUBE_PUBLICA||null}
